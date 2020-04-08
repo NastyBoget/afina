@@ -151,7 +151,7 @@ void ServerImpl::OnRun() {
                 if (current_event.events & EPOLLIN) {
                     pc->DoRead();
                 }
-                if (current_event.events & EPOLLOUT) {
+                if (pc->_event.events & EPOLLOUT) {
                     pc->DoWrite();
                 }
             }

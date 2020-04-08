@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <sys/socket.h>
+#include <sys/uio.h>
 
 namespace Afina {
 namespace Network {
@@ -12,7 +13,7 @@ void Connection::Start() {
 	_logger->debug("Connection on {} socket started", _socket);
 	_event.data.fd = _socket;
 	_event.data.ptr = this;
-	_event.events = EPOLLIN;
+	_event.events = EPOLLIN | EPOLLHUP | EPOLLERR;
 }
 
 // See Connection.h
@@ -32,26 +33,32 @@ void Connection::DoRead() {
 	_logger->debug("Do read on {} socket", _socket);
 
 	try{
-		int read_bytes = -1;
-		while ((read_bytes = read(_socket, _read_buffer + _read_count, 
-					sizeof(_read_buffer) - _read_count)) > 0) {
-	    	_read_count += read_bytes;
-	    	_logger->debug("Got {} bytes from socket", read_bytes);
+		int read_count = -1;
+		while ((read_count = read(_socket, _read_buffer + read_bytes, 
+					sizeof(_read_buffer) - read_bytes)) > 0) {
+	    	read_bytes += read_count;
+	    	_logger->debug("Got {} bytes from socket", read_count);
 
 	    	while (read_bytes > 0) {
 	            _logger->debug("Process {} bytes", read_bytes);
 	            // There is no command yet
 	            if (!command_to_execute) {
 	                std::size_t parsed = 0;
-	                if (parser.Parse(_read_buffer, read_bytes, parsed)) {
-	                    // There is no command to be launched, continue to parse input stream
-	                    // Here we are, current chunk finished some command, process it
-	                    _logger->debug("Found new command: {} in {} bytes", parser.Name(), parsed);
-	                    command_to_execute = parser.Build(arg_remains);
-	                    if (arg_remains > 0) {
-	                        arg_remains += 2;
-	                    }
-	                }
+	                try {
+		                if (parser.Parse(_read_buffer, read_bytes, parsed)) {
+		                    // There is no command to be launched, continue to parse input stream
+		                    // Here we are, current chunk finished some command, process it
+		                    _logger->debug("Found new command: {} in {} bytes", parser.Name(), parsed);
+		                    command_to_execute = parser.Build(arg_remains);
+		                    if (arg_remains > 0) {
+		                        arg_remains += 2;
+		                    }
+		                }
+	            	} catch (std::runtime_error &ex) {
+	            		_output_queue.push_back("(?^u:ERROR)");
+		                _event.events = EPOLLIN | EPOLLHUP | EPOLLERR | EPOLLOUT;
+		            	throw std::runtime_error(ex.what());
+	            	}
 
 	                // Parsed might fails to consume any bytes from input stream. In real life that could happens,
 	                // for example, because we are working with UTF-16 chars and only 1 byte left in stream
@@ -84,18 +91,18 @@ void Connection::DoRead() {
 
 	                // Send response
 	                result += "\r\n";
-
-	                if (_output_queue.empty()) {
-	                	_event.events |= EPOLLOUT;
-	                }
+	                
 	                _output_queue.push_back(result);
+	                if (_output_queue.size() == 1) {
+	                	_event.events = EPOLLIN | EPOLLHUP | EPOLLERR | EPOLLOUT;
+	                }
 
 	                // Prepare for the next command
 	                command_to_execute.reset();
 	                argument_for_command.resize(0);
 	                parser.Reset();
 	            }
-	        } // while (read_bytes) 
+	        } // while (read_count) 
 	    }
 	    is_alive = false;
 	    if (read_bytes == 0) {
@@ -113,11 +120,10 @@ void Connection::DoRead() {
 void Connection::DoWrite() {
 	_logger->debug("Do write on {} socket", _socket);
 	struct iovec tmp[_output_queue.size()];
-	int i = 0;
-	for (auto command : _output_queue) {
-		tmp[i].iov_base = &command.data();
-		tmp[i].iov_len = command.size();
-		++i;
+	size_t i;
+	for (i = 0; i < _output_queue.size(); ++i) {
+		tmp[i].iov_base = &(_output_queue[i][0]);
+		tmp[i].iov_len = _output_queue[i].size();
 	}
 
 	tmp[0].iov_base = static_cast<char *>(tmp[0].iov_base) + _head_written_count;
@@ -125,23 +131,26 @@ void Connection::DoWrite() {
 
 	int written_bytes = writev(_socket, tmp, i);
 
-	if (written_bytes) {
+	if (written_bytes <= 0) {
 		is_alive = false;
 		throw std::runtime_error("Failed to send response");
 	}
 
+	i = 0;
 	for (auto command : _output_queue) {
 		if (written_bytes - command.size() >= 0) {
-			_output_queue.pop_front();
+			++i;
 			written_bytes -= command.size();
 		} else {
 			break;
 		}
 	}
+
+	_output_queue.erase(_output_queue.begin(), _output_queue.begin() + i);
 	_head_written_count = written_bytes;
 
 	if (_output_queue.empty()) {
-		_event.events = EPOLLIN;
+		_event.events = EPOLLIN | EPOLLHUP | EPOLLERR;
 	}
 }
 

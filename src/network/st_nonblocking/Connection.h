@@ -2,7 +2,7 @@
 #define AFINA_NETWORK_ST_NONBLOCKING_CONNECTION_H
 
 #include <cstring>
-#include <queue>
+#include <vector>
 #include <sys/epoll.h>
 #include <spdlog/logger.h>
 #include <afina/execute/Command.h>
@@ -14,11 +14,11 @@ namespace STnonblock {
 
 class Connection {
 public:
-    Connection(int s, std::shared_ptr<Afina::Storage> ps, std::shared_ptr<spdlog::logger> pl) : 
+    Connection(int s, std::shared_ptr<Afina::Storage> &ps, std::shared_ptr<spdlog::logger> &pl) :
             _socket(s), pStorage(ps), _logger(pl) {
         std::memset(&_event, 0, sizeof(struct epoll_event));
         is_alive = true;
-        _read_count = _head_written_count = 0;
+        read_bytes = _head_written_count = 0;
         _event.data.ptr = this;
     }
 
@@ -39,10 +39,10 @@ private:
     int _socket;
     struct epoll_event _event;
 
-    std::list<std::string> _output_queue;
+    std::vector<std::string> _output_queue;
     char _read_buffer[4096];
-    size_t _read_count;
-    size_t _head_written_count;
+    size_t read_bytes;
+    int _head_written_count;
     std::shared_ptr<spdlog::logger> _logger;
     std::shared_ptr<Afina::Storage> pStorage;
 
