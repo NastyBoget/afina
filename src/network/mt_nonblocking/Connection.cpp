@@ -10,7 +10,7 @@ namespace MTnonblock {
 
 // See Connection.h
 void Connection::Start() {
-	std::lock_guard<std::mutex> l(_mutex);
+    std::lock_guard<std::mutex> l(_mutex);
     _logger->debug("Connection on {} socket started", _socket);
     _event.data.fd = _socket;
     _event.data.ptr = this;
@@ -31,7 +31,7 @@ void Connection::OnClose() {
 
 // See Connection.h
 void Connection::DoRead() {
-	std::lock_guard<std::mutex> l(_mutex);
+    std::lock_guard<std::mutex> l(_mutex);
     _logger->debug("Do read on {} socket", _socket);
 
     try {
@@ -118,7 +118,7 @@ void Connection::DoRead() {
 
 // See Connection.h
 void Connection::DoWrite() {
-	std::lock_guard<std::mutex> l(_mutex);
+    std::lock_guard<std::mutex> l(_mutex);
     _logger->debug("Do write on {} socket", _socket);
     struct iovec tmp[_output_queue.size()];
     size_t i;

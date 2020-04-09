@@ -104,7 +104,7 @@ void Worker::OnRun() {
                     _logger->trace("Got EPOLLIN");
                     pconn->DoRead();
                 }
-                if (current_event.events & EPOLLOUT) {
+                if (pconn->_event.events & EPOLLOUT) {
                     _logger->trace("Got EPOLLOUT");
                     pconn->DoWrite();
                 }

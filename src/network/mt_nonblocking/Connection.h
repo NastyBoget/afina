@@ -22,7 +22,7 @@ public:
         _event.data.ptr = this;
     }
 
-    inline bool isAlive() const { return is_alive.load(); }
+    inline bool isAlive() const { return is_alive; }
 
     void Start();
 
@@ -36,7 +36,7 @@ private:
     friend class Worker;
     friend class ServerImpl;
 
-    std::mutex _mutex; // for start/read/write critical sections
+    std::mutex _mutex;          // for start/read/write critical sections
     std::atomic<bool> is_alive; // for atomic change of a variable
 
     int _socket;
