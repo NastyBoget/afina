@@ -19,14 +19,13 @@ void Connection::Start() {
 // See Connection.h
 void Connection::OnError() {
     _logger->warn("Connection on {} socket has error", _socket);
-    std::cout << "OnError" << std::endl;
-    is_alive = false;
+    _is_alive = false;
 }
 
 // See Connection.h
 void Connection::OnClose() {
     _logger->debug("Connection on {} socket closed", _socket);
-    is_alive = false;
+    _is_alive = false;
 }
 
 // See Connection.h
@@ -35,23 +34,23 @@ void Connection::DoRead() {
 
     try {
         int read_count = -1;
-        while ((read_count = read(_socket, _read_buffer + read_bytes, sizeof(_read_buffer) - read_bytes)) > 0) {
-            read_bytes += read_count;
+        while ((read_count = read(_socket, _read_buffer + _read_bytes, sizeof(_read_buffer) - _read_bytes)) > 0) {
+            _read_bytes += read_count;
             _logger->debug("Got {} bytes from socket", read_count);
 
-            while (read_bytes > 0) {
-                _logger->debug("Process {} bytes", read_bytes);
+            while (_read_bytes > 0) {
+                _logger->debug("Process {} bytes", _read_bytes);
                 // There is no command yet
-                if (!command_to_execute) {
+                if (!_command_to_execute) {
                     std::size_t parsed = 0;
                     try {
-                        if (parser.Parse(_read_buffer, read_bytes, parsed)) {
+                        if (_parser.Parse(_read_buffer, _read_bytes, parsed)) {
                             // There is no command to be launched, continue to parse input stream
                             // Here we are, current chunk finished some command, process it
-                            _logger->debug("Found new command: {} in {} bytes", parser.Name(), parsed);
-                            command_to_execute = parser.Build(arg_remains);
-                            if (arg_remains > 0) {
-                                arg_remains += 2;
+                            _logger->debug("Found new command: {} in {} bytes", _parser.Name(), parsed);
+                            _command_to_execute = _parser.Build(_arg_remains);
+                            if (_arg_remains > 0) {
+                                _arg_remains += 2;
                             }
                         }
                     } catch (std::runtime_error &ex) {
@@ -65,29 +64,29 @@ void Connection::DoRead() {
                     if (parsed == 0) {
                         break;
                     } else {
-                        std::memmove(_read_buffer, _read_buffer + parsed, read_bytes - parsed);
-                        read_bytes -= parsed;
+                        std::memmove(_read_buffer, _read_buffer + parsed, _read_bytes - parsed);
+                        _read_bytes -= parsed;
                     }
                 }
 
                 // There is command, but we still wait for argument to arrive...
-                if (command_to_execute && arg_remains > 0) {
-                    _logger->debug("Fill argument: {} bytes of {}", read_bytes, arg_remains);
+                if (_command_to_execute && _arg_remains > 0) {
+                    _logger->debug("Fill argument: {} bytes of {}", _read_bytes, _arg_remains);
                     // There is some parsed command, and now we are reading argument
-                    std::size_t to_read = std::min(arg_remains, std::size_t(read_bytes));
-                    argument_for_command.append(_read_buffer, to_read);
+                    std::size_t to_read = std::min(_arg_remains, std::size_t(_read_bytes));
+                    _argument_for_command.append(_read_buffer, to_read);
 
-                    std::memmove(_read_buffer, _read_buffer + to_read, read_bytes - to_read);
-                    arg_remains -= to_read;
-                    read_bytes -= to_read;
+                    std::memmove(_read_buffer, _read_buffer + to_read, _read_bytes - to_read);
+                    _arg_remains -= to_read;
+                    _read_bytes -= to_read;
                 }
 
                 // There is command & argument - RUN!
-                if (command_to_execute && arg_remains == 0) {
+                if (_command_to_execute && _arg_remains == 0) {
                     _logger->debug("Start command execution");
 
                     std::string result;
-                    command_to_execute->Execute(*pStorage, argument_for_command, result);
+                    _command_to_execute->Execute(*_pStorage, _argument_for_command, result);
 
                     // Send response
                     result += "\r\n";
@@ -98,14 +97,14 @@ void Connection::DoRead() {
                     }
 
                     // Prepare for the next command
-                    command_to_execute.reset();
-                    argument_for_command.resize(0);
-                    parser.Reset();
+                    _command_to_execute.reset();
+                    _argument_for_command.resize(0);
+                    _parser.Reset();
                 }
             } // while (read_count)
         }
-        is_alive = false;
-        if (read_bytes == 0) {
+        _is_alive = false;
+        if (_read_bytes == 0) {
             _logger->debug("Connection closed");
         } else {
             throw std::runtime_error(std::string(strerror(errno)));
@@ -131,7 +130,7 @@ void Connection::DoWrite() {
     int written_bytes = writev(_socket, tmp, i);
 
     if (written_bytes <= 0) {
-        is_alive = false;
+        _is_alive = false;
         throw std::runtime_error("Failed to send response");
     }
 
