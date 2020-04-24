@@ -15,14 +15,15 @@ namespace MTnonblock {
 class Connection {
 public:
     Connection(int s, std::shared_ptr<Afina::Storage> &ps, std::shared_ptr<spdlog::logger> &pl)
-        : _socket(s), pStorage(ps), _logger(pl) {
+        : _socket(s), _pStorage(ps), _logger(pl) {
         std::memset(&_event, 0, sizeof(struct epoll_event));
-        is_alive.store(true);
-        read_bytes = _head_written_count = 0;
+        _is_alive.store(true);
+        _end_reading.store(false);
+        _read_bytes = _head_written_count = 0;
         _event.data.ptr = this;
     }
 
-    inline bool isAlive() const { return is_alive; }
+    inline bool isAlive() const { return _is_alive.load(); }
 
     void Start();
 
@@ -37,22 +38,23 @@ private:
     friend class ServerImpl;
 
     std::mutex _mutex;          // for start/read/write critical sections
-    std::atomic<bool> is_alive; // for atomic change of a variable
+    std::atomic<bool> _is_alive; // for atomic change of a variable
+    std::atomic<bool> _end_reading;
 
     int _socket;
     struct epoll_event _event;
 
     std::vector<std::string> _output_queue;
     char _read_buffer[4096];
-    size_t read_bytes;
+    size_t _read_bytes;
     int _head_written_count;
     std::shared_ptr<spdlog::logger> _logger;
-    std::shared_ptr<Afina::Storage> pStorage;
+    std::shared_ptr<Afina::Storage> _pStorage;
     // variables for parser
-    std::size_t arg_remains;
-    Protocol::Parser parser;
-    std::string argument_for_command;
-    std::unique_ptr<Execute::Command> command_to_execute;
+    std::size_t _arg_remains;
+    Protocol::Parser _parser;
+    std::string _argument_for_command;
+    std::unique_ptr<Execute::Command> _command_to_execute;
 };
 
 } // namespace MTnonblock

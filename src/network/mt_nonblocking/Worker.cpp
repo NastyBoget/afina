@@ -101,22 +101,24 @@ void Worker::OnRun() {
             } else {
                 // Depends on what connection wants...
                 if (current_event.events & EPOLLIN) {
-                    _logger->trace("Got EPOLLIN");
+                    _logger->debug("Got EPOLLIN");
                     pconn->DoRead();
                 }
-                if (pconn->_event.events & EPOLLOUT) {
-                    _logger->trace("Got EPOLLOUT");
+                if (current_event.events & EPOLLOUT) {
+                    _logger->debug("Got EPOLLOUT");
                     pconn->DoWrite();
                 }
             }
 
             // Rearm connection
             if (pconn->isAlive()) {
+                _logger->debug("Next worker iteration");
                 pconn->_event.events |= EPOLLONESHOT;
                 int epoll_ctl_retval;
                 if ((epoll_ctl_retval = epoll_ctl(_epoll_fd, EPOLL_CTL_MOD, pconn->_socket, &pconn->_event))) {
                     _logger->debug("epoll_ctl failed during connection rearm: error {}", epoll_ctl_retval);
                     pconn->OnError();
+                    close(pconn->_socket);
                     delete pconn;
                 }
             }
@@ -125,6 +127,7 @@ void Worker::OnRun() {
                 if (epoll_ctl(_epoll_fd, EPOLL_CTL_DEL, pconn->_socket, &pconn->_event)) {
                     std::cerr << "Failed to delete connection!" << std::endl;
                 }
+                close(pconn->_socket);
                 delete pconn;
             }
         }

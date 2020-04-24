@@ -119,6 +119,7 @@ void ServerImpl::Stop() {
     if (eventfd_write(_event_fd, 1)) {
         throw std::runtime_error("Failed to wakeup workers");
     }
+    shutdown(_server_socket, SHUT_RDWR);
 }
 
 // See Server.h
@@ -130,6 +131,7 @@ void ServerImpl::Join() {
     for (auto &w : _workers) {
         w.Join();
     }
+    close(_server_socket);
 }
 
 // See ServerImpl.h
@@ -206,6 +208,7 @@ void ServerImpl::OnRun() {
                     if ((epoll_ctl_retval = epoll_ctl(_data_epoll_fd, EPOLL_CTL_ADD, pc->_socket, &pc->_event))) {
                         _logger->debug("epoll_ctl failed during connection register in workers'epoll: error {}", epoll_ctl_retval);
                         pc->OnError();
+                        close(pc->_socket);
                         delete pc;
                     }
                 }
