@@ -3,6 +3,7 @@
 #include <iostream>
 #include <sys/socket.h>
 #include <sys/uio.h>
+#include <errno.h>
 
 namespace Afina {
 namespace Network {
@@ -101,9 +102,9 @@ void Connection::DoRead() {
                     _argument_for_command.resize(0);
                     _parser.Reset();
                 }
-            } // while (read_count)
-        }
-        _is_alive = false;
+            }
+        } // while (read_count)
+        _end_reading = true;
         if (_read_bytes == 0) {
             _logger->debug("Connection closed");
         } else {
@@ -111,6 +112,7 @@ void Connection::DoRead() {
         }
     } catch (std::runtime_error &ex) {
         _logger->error("Failed to process connection on descriptor {}: {}", _socket, ex.what());
+        _end_reading = true;
     }
 }
 
@@ -130,8 +132,10 @@ void Connection::DoWrite() {
     int written_bytes = writev(_socket, tmp, i);
 
     if (written_bytes <= 0) {
-        _is_alive = false;
-        throw std::runtime_error("Failed to send response");
+        if (errno != EINTR && errno != EAGAIN && errno != EPIPE) {
+            _is_alive = false;
+            throw std::runtime_error("Failed to send response");
+        }
     }
 
     i = 0;
@@ -149,6 +153,9 @@ void Connection::DoWrite() {
 
     if (_output_queue.empty()) {
         _event.events = EPOLLIN | EPOLLHUP | EPOLLERR;
+        if (_end_reading) {
+            _is_alive = false;
+        }
     }
 }
 

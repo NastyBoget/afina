@@ -18,6 +18,7 @@ public:
         : _socket(s), _pStorage(ps), _logger(pl) {
         std::memset(&_event, 0, sizeof(struct epoll_event));
         _is_alive = true;
+        _end_reading = false;
         _arg_remains = _read_bytes = _head_written_count = 0;
         _event.data.ptr = this;
         std::memset(_read_buffer, 0, 4096);
@@ -37,6 +38,7 @@ private:
     friend class ServerImpl;
 
     bool _is_alive;
+    bool _end_reading;
     int _socket;
     struct epoll_event _event;
 
