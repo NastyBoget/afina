@@ -21,13 +21,13 @@ void Connection::Start() {
 // See Connection.h
 void Connection::OnError() {
     _logger->warn("Connection on {} socket has error", _socket);
-    _is_alive.store(false);
+    _is_alive.store(false, std::memory_order_release);
 }
 
 // See Connection.h
 void Connection::OnClose() {
     _logger->debug("Connection on {} socket closed", _socket);
-    _is_alive.store(false);
+    _is_alive.store(false, std::memory_order_release);
 }
 
 // See Connection.h
@@ -108,13 +108,13 @@ void Connection::DoRead() {
         } // while (read_count)
         if (_read_bytes == 0) {
             _logger->debug("Connection closed");
-            _end_reading.store(true);
+            _end_reading.store(true, std::memory_order_release);
         } else {
             throw std::runtime_error(std::string(strerror(errno)));
         }
     } catch (std::runtime_error &ex) {
         _logger->error("Failed to process connection on descriptor {}: {}", _socket, ex.what());
-        _end_reading.store(true);
+        _end_reading.store(true, std::memory_order_release);
     }
 }
 
@@ -136,7 +136,7 @@ void Connection::DoWrite() {
 
     if (written_bytes <= 0) {
         if (errno != EINTR && errno != EAGAIN && errno != EPIPE) {
-            OnError();
+            _is_alive.store(false, std::memory_order_release);
         }
         throw std::runtime_error("Failed to send response");
     }

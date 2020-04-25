@@ -7,6 +7,7 @@
 #include <spdlog/logger.h>
 #include <sys/epoll.h>
 #include <vector>
+#include <atomic>
 
 namespace Afina {
 namespace Network {
@@ -17,13 +18,13 @@ public:
     Connection(int s, std::shared_ptr<Afina::Storage> &ps, std::shared_ptr<spdlog::logger> &pl)
         : _socket(s), _pStorage(ps), _logger(pl) {
         std::memset(&_event, 0, sizeof(struct epoll_event));
-        _is_alive.store(true);
-        _end_reading.store(false);
+        _is_alive.store(true, std::memory_order_release);
+        _end_reading.store(false, std::memory_order_release);
         _read_bytes = _head_written_count = 0;
         _event.data.ptr = this;
     }
 
-    inline bool isAlive() const { return _is_alive.load(); }
+    inline bool isAlive() const { return _is_alive.load(std::memory_order_acquire); }
 
     void Start();
 
