@@ -38,7 +38,6 @@ private:
     friend class Worker;
     friend class ServerImpl;
 
-    std::mutex _mutex;          // for start/read/write critical sections
     std::atomic<bool> _is_alive; // for atomic change of a variable
     std::atomic<bool> _end_reading;
 
