@@ -32,6 +32,9 @@ void Get::Execute(Storage &storage, const std::string &args, std::string &out) {
     for (auto &key : _keys) {
         if (!storage.Get(key, value))
             continue;
+        if (value[value.size() - 1] == '\n') {
+            value.erase(value.end() - 2, value.end());
+        }
         outStream << "VALUE " << key << " 0 " << value.size() << "\r\n";
         outStream << value << "\r\n";
     }
