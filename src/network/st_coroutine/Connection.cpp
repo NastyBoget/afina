@@ -2,8 +2,8 @@
 
 #include <afina/execute/Command.h>
 #include <iostream>
-#include <sys/socket.h>
 #include <unistd.h>
+#include <sys/uio.h>
 
 namespace Afina {
 namespace Network {
@@ -30,7 +30,7 @@ void Connection::OnClose() {
 }
 
 // See Connection.h
-void Connection::DoReadWrite(Afina::Coroutine::Engine &engine) {
+void Connection::DoRead() {
     _logger->debug("Do read on {} socket", _socket);
     char _read_buffer[4096];
     size_t _read_bytes = 0;
@@ -61,7 +61,8 @@ void Connection::DoReadWrite(Afina::Coroutine::Engine &engine) {
                             }
                         }
                     } catch (std::runtime_error &ex) {
-                        _event.events |= EPOLLOUT;
+                        _output_queue.emplace_back("(?^u:ERROR)");
+                        _event.events = EPOLLIN | EPOLLHUP | EPOLLERR | EPOLLOUT;
                         throw std::runtime_error(ex.what());
                     }
 
@@ -97,29 +98,70 @@ void Connection::DoReadWrite(Afina::Coroutine::Engine &engine) {
                     // Send response
                     result += "\r\n";
 
-                    _event.events |= EPOLLOUT;
-                    engine.block();
-
-                    if (send(_socket, result.data(), result.size(), 0) <= 0) {
-                        throw std::runtime_error("Failed to send response");
+                    _output_queue.push_back(result);
+                    if (_output_queue.size() == 1) {
+                        _event.events = EPOLLIN | EPOLLHUP | EPOLLERR | EPOLLOUT;
                     }
+
                     // Prepare for the next command
                     _command_to_execute.reset();
                     _argument_for_command.resize(0);
                     _parser.Reset();
-                    engine.block();
                 }
             }
         } // while (read_count)
-        if (read_count == 0) {
+        _end_reading = true;
+        if (_read_bytes == 0) {
             _logger->debug("Connection closed");
-            _is_alive = false;
         } else {
             throw std::runtime_error(std::string(strerror(errno)));
         }
     } catch (std::runtime_error &ex) {
         _logger->error("Failed to process connection on descriptor {}: {}", _socket, ex.what());
-        _is_alive = false;
+        _end_reading = true;
+    }
+}
+
+// See Connection.h
+void Connection::DoWrite() {
+    _logger->debug("Do write on {} socket", _socket);
+    struct iovec tmp[_output_queue.size()];
+    size_t i;
+    for (i = 0; i < _output_queue.size(); ++i) {
+        tmp[i].iov_base = &(_output_queue[i][0]);
+        tmp[i].iov_len = _output_queue[i].size();
+    }
+
+    tmp[0].iov_base = static_cast<char *>(tmp[0].iov_base) + _head_written_count;
+    tmp[0].iov_len -= _head_written_count;
+
+    int written_bytes = writev(_socket, tmp, i);
+
+    if (written_bytes <= 0) {
+        if (errno != EINTR && errno != EAGAIN && errno != EPIPE) {
+            _is_alive = false;
+            throw std::runtime_error("Failed to send response");
+        }
+    }
+
+    i = 0;
+    for (auto command : _output_queue) {
+        if (written_bytes - command.size() >= 0) {
+            ++i;
+            written_bytes -= command.size();
+        } else {
+            break;
+        }
+    }
+
+    _output_queue.erase(_output_queue.begin(), _output_queue.begin() + i);
+    _head_written_count = written_bytes;
+
+    if (_output_queue.empty()) {
+        _event.events = EPOLLIN | EPOLLHUP | EPOLLERR;
+        if (_end_reading) {
+            _is_alive = false;
+        }
     }
 }
 

@@ -16,7 +16,7 @@ namespace STcoroutine {
 class Connection {
 public:
     Connection(int s, std::shared_ptr<Afina::Storage> &ps, std::shared_ptr<spdlog::logger> &pl) : _socket(s), _is_alive(false),
-   _ctx(nullptr), _pStorage(ps), _logger(pl) {}
+    _read_ctx(nullptr), _write_ctx(nullptr), _pStorage(ps), _logger(pl), _end_reading(false), _head_written_count(0) {}
 
     inline bool isAlive() const { return _is_alive; }
 
@@ -25,7 +25,8 @@ public:
 protected:
     void OnError();
     void OnClose();
-    void DoReadWrite(Afina::Coroutine::Engine &engine);
+    void DoRead();
+    void DoWrite();
 
 private:
     friend class ServerImpl;
@@ -34,10 +35,15 @@ private:
 
     bool _is_alive;
 
-    Afina::Coroutine::Engine::context *_ctx;
+    bool _end_reading;
 
+    Afina::Coroutine::Engine::context *_read_ctx;
+
+    Afina::Coroutine::Engine::context *_write_ctx;
+
+    std::vector<std::string> _output_queue;
     struct epoll_event _event;
-
+    int _head_written_count;
     std::shared_ptr<spdlog::logger> _logger;
     std::shared_ptr<Afina::Storage> _pStorage;
 
