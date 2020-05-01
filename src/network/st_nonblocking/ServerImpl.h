@@ -3,6 +3,7 @@
 
 #include <thread>
 #include <vector>
+#include <unordered_set>
 
 #include <afina/network/Server.h>
 
@@ -18,7 +19,7 @@ namespace STnonblock {
 class Worker;
 
 /**
- * # Network resource manager implementation
+ * Network resource manager implementation
  * Epoll based server
  */
 class ServerImpl : public Server {
@@ -51,11 +52,13 @@ private:
     // Socket to accept new connection on, shared between acceptors
     int _server_socket;
 
-    // Curstom event "device" used to wakeup workers
+    // Custom event "device" used to wakeup workers
     int _event_fd;
 
     // IO thread
     std::thread _work_thread;
+
+    std::unordered_set<int> _client_sockets;
 };
 
 } // namespace STnonblock

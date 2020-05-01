@@ -1,7 +1,6 @@
 #include "Connection.h"
 
 #include <iostream>
-#include <sys/socket.h>
 #include <sys/uio.h>
 #include <errno.h>
 
@@ -55,7 +54,7 @@ void Connection::DoRead() {
                             }
                         }
                     } catch (std::runtime_error &ex) {
-                        _output_queue.push_back("(?^u:ERROR)");
+                        _output_queue.emplace_back("(?^u:ERROR)");
                         _event.events = EPOLLIN | EPOLLHUP | EPOLLERR | EPOLLOUT;
                         throw std::runtime_error(ex.what());
                     }
@@ -139,7 +138,7 @@ void Connection::DoWrite() {
     }
 
     i = 0;
-    for (auto command : _output_queue) {
+    for (const auto& command : _output_queue) {
         if (written_bytes - command.size() >= 0) {
             ++i;
             written_bytes -= command.size();
