@@ -93,13 +93,9 @@ protected:
 public:
     explicit Engine(unblocker_func unblocker = null_unblocker)
         : StackBottom(nullptr), cur_routine(nullptr), alive(nullptr), _unblocker(std::move(unblocker)),
-        blocked(nullptr), idle_ctx(nullptr) {}
+          blocked(nullptr), idle_ctx(nullptr) {}
     Engine(Engine &&) = delete;
     Engine(const Engine &) = delete;
-
-    bool is_all_blocked() {
-        return !alive && blocked;
-    }
 
     void unblock_all() {
         for (auto coro = blocked; coro != nullptr; coro = blocked) {
@@ -110,6 +106,7 @@ public:
     context *get_cur_routine() {
         return cur_routine;
     }
+
     /**
      * Gives up current routine execution and let engine to schedule other one. It is not defined when
      * routine will get execution back, for example if there are no other coroutines then executing could
@@ -221,7 +218,6 @@ public:
             pc->prev = pc->next = nullptr;
             delete std::get<0>(pc->Stack);
             delete pc;
-
             // We cannot return here, as this function "returned" once already, so here we must select some other
             // coroutine to run. As current coroutine is completed and can't be scheduled anymore, it is safe to
             // just give up and ask scheduler code to select someone else, control will never returns to this one

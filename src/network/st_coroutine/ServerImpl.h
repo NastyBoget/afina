@@ -60,8 +60,9 @@ private:
     // IO thread
     std::thread _work_thread;
 
-    Afina::Coroutine::Engine _engine;
     Afina::Coroutine::Engine::context *_ctx;
+
+    Afina::Coroutine::Engine _engine;
 
     void unblocker();
 
