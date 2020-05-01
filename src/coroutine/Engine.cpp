@@ -93,6 +93,9 @@ void Engine::block(void *coro) {
     }
     blockedCoro->isBlocked = true;
     // delete coroutine from the list of alive coroutines
+    if (alive == blockedCoro) {
+        alive = alive->next;
+    }
     if (blockedCoro->prev != nullptr) {
         blockedCoro->prev->next = blockedCoro->next;
     }
@@ -124,7 +127,11 @@ void Engine::unblock(void *coro) {
     if (unblockedCoro == nullptr || !unblockedCoro->isBlocked) {
         return;
     }
+    unblockedCoro->isBlocked = false;
     // delete coroutine from the list of blocked coroutines
+    if (blocked == unblockedCoro) {
+        blocked = blocked->next;
+    }
     if (unblockedCoro->prev != nullptr) {
         unblockedCoro->prev->next = unblockedCoro->next;
     }
