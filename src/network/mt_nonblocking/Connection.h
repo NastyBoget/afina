@@ -19,7 +19,7 @@ public:
         : _socket(s), _pStorage(ps), _logger(pl) {
         std::memset(&_event, 0, sizeof(struct epoll_event));
         _is_alive.store(true, std::memory_order_release);
-        _end_reading.store(false, std::memory_order_release);
+        _data_available.store(false, std::memory_order_release);
         _read_bytes = _head_written_count = 0;
         _event.data.ptr = this;
     }
@@ -39,7 +39,7 @@ private:
     friend class ServerImpl;
 
     std::atomic<bool> _is_alive; // for atomic change of a variable
-    std::atomic<bool> _end_reading;
+    std::atomic<bool> _data_available;
 
     int _socket;
     struct epoll_event _event;
@@ -50,6 +50,7 @@ private:
     int _head_written_count;
     std::shared_ptr<spdlog::logger> _logger;
     std::shared_ptr<Afina::Storage> _pStorage;
+
     // variables for parser
     std::size_t _arg_remains;
     Protocol::Parser _parser;

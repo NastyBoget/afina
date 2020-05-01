@@ -55,7 +55,7 @@ void Connection::DoRead() {
                             }
                         }
                     } catch (std::runtime_error &ex) {
-                        _output_queue.push_back("(?^u:ERROR)");
+                        _output_queue.emplace_back("(?^u:ERROR)");
                         _event.events |= EPOLLOUT;
                         throw std::runtime_error(ex.what());
                     }
@@ -106,55 +106,55 @@ void Connection::DoRead() {
         } // while (read_count)
         if (_read_bytes == 0) {
             _logger->debug("Connection closed");
-            _end_reading.store(true, std::memory_order_release);
+            _data_available.store(true, std::memory_order_release);
         } else {
             throw std::runtime_error(std::string(strerror(errno)));
         }
     } catch (std::runtime_error &ex) {
         _logger->error("Failed to process connection on descriptor {}: {}", _socket, ex.what());
-        _end_reading.store(true, std::memory_order_release);
+        _data_available.store(true, std::memory_order_release);
     }
 }
 
 // See Connection.h
 void Connection::DoWrite() {
     _logger->debug("Do write on {} socket", _socket);
-    struct iovec tmp[_output_queue.size()];
-    size_t i;
-    for (i = 0; i < _output_queue.size(); ++i) {
-        tmp[i].iov_base = &(_output_queue[i][0]);
-        tmp[i].iov_len = _output_queue[i].size();
-    }
+    if (_data_available.load(std::memory_order_acquire)) {
+        struct iovec tmp[_output_queue.size()];
+        size_t i;
+        for (i = 0; i < _output_queue.size(); ++i) {
+            tmp[i].iov_base = &(_output_queue[i][0]);
+            tmp[i].iov_len = _output_queue[i].size();
+        }
 
-    tmp[0].iov_base = static_cast<char *>(tmp[0].iov_base) + _head_written_count;
-    tmp[0].iov_len -= _head_written_count;
+        tmp[0].iov_base = static_cast<char *>(tmp[0].iov_base) + _head_written_count;
+        tmp[0].iov_len -= _head_written_count;
 
-    int written_bytes = writev(_socket, tmp, i);
+        int written_bytes = writev(_socket, tmp, i);
 
-    if (written_bytes <= 0) {
-        if (errno != EINTR && errno != EAGAIN && errno != EPIPE) {
+        if (written_bytes <= 0) {
+            if (errno != EINTR && errno != EAGAIN && errno != EPIPE) {
+                _is_alive.store(false, std::memory_order_release);
+            }
+            throw std::runtime_error("Failed to send response");
+        }
+
+        i = 0;
+        for (const auto& command : _output_queue) {
+            if (written_bytes - command.size() >= 0) {
+                ++i;
+                written_bytes -= command.size();
+            } else {
+                break;
+            }
+        }
+
+        _output_queue.erase(_output_queue.begin(), _output_queue.begin() + i);
+        _head_written_count = written_bytes;
+
+        if (_output_queue.empty()) {
+            _event.events = EPOLLIN | EPOLLHUP | EPOLLERR | EPOLLET;
             _is_alive.store(false, std::memory_order_release);
-        }
-        throw std::runtime_error("Failed to send response");
-    }
-
-    i = 0;
-    for (auto command : _output_queue) {
-        if (written_bytes - command.size() >= 0) {
-            ++i;
-            written_bytes -= command.size();
-        } else {
-            break;
-        }
-    }
-
-    _output_queue.erase(_output_queue.begin(), _output_queue.begin() + i);
-    _head_written_count = written_bytes;
-
-    if (_output_queue.empty()) {
-        _event.events = EPOLLIN | EPOLLHUP | EPOLLERR | EPOLLET;
-        if (_end_reading) {
-            _is_alive.store(false);
         }
     }
 }

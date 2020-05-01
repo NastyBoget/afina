@@ -3,6 +3,8 @@
 
 #include <thread>
 #include <vector>
+#include <unordered_set>
+#include <mutex>
 
 #include <afina/network/Server.h>
 
@@ -18,7 +20,7 @@ namespace MTnonblock {
 class Worker;
 
 /**
- * # Network resource manager implementation
+ * Network resource manager implementation
  * Epoll based server
  */
 class ServerImpl : public Server {
@@ -37,7 +39,6 @@ public:
 
 protected:
     void OnRun();
-    void OnNewConnection();
 
 private:
     // logger to use
@@ -50,6 +51,9 @@ private:
 
     // Socket to accept new connection on, shared between acceptors
     int _server_socket;
+
+    std::unordered_set<int> _client_sockets;
+    std::mutex _set_is_blocked;
 
     // Threads that accepts new connections, each has private epoll instance
     // but share global server socket

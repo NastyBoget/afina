@@ -48,7 +48,7 @@ Worker &Worker::operator=(Worker &&other) {
 
 // See Worker.h
 void Worker::Start(int epoll_fd) {
-    if (isRunning.exchange(true) == false) {
+    if (!isRunning.exchange(true)) {
         assert(_epoll_fd == -1);
         _epoll_fd = epoll_fd;
         _logger = _pLogging->select("network.worker");
@@ -91,7 +91,7 @@ void Worker::OnRun() {
             }
 
             // Some connection gets new data
-            Connection *pconn = static_cast<Connection *>(current_event.data.ptr);
+            auto *pconn = static_cast<Connection *>(current_event.data.ptr);
             if ((current_event.events & EPOLLERR) || (current_event.events & EPOLLHUP)) {
                 _logger->debug("Got EPOLLERR or EPOLLHUP, value of returned events: {}", current_event.events);
                 pconn->OnError();

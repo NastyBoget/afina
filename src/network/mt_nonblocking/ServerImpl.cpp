@@ -1,12 +1,9 @@
 #include "ServerImpl.h"
 
-#include <cassert>
 #include <cstring>
-#include <iostream>
 #include <memory>
 #include <stdexcept>
 
-#include <arpa/inet.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <signal.h>
@@ -15,8 +12,6 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
-
-#include <spdlog/logger.h>
 
 #include <afina/Storage.h>
 #include <afina/logging/Service.h>
@@ -131,6 +126,13 @@ void ServerImpl::Join() {
     for (auto &w : _workers) {
         w.Join();
     }
+    {
+        std::lock_guard<std::mutex> l(_set_is_blocked);
+        for (auto socket : _client_sockets) {
+            close(socket);
+        }
+        _client_sockets.clear();
+    }
     close(_server_socket);
 }
 
@@ -210,6 +212,9 @@ void ServerImpl::OnRun() {
                         pc->OnError();
                         close(pc->_socket);
                         delete pc;
+                    } else {
+                        std::lock_guard<std::mutex> l(_set_is_blocked);
+                        _client_sockets.emplace(pc->_socket);
                     }
                 }
             }
