@@ -98,15 +98,21 @@ void Connection::DoReadWrite(Afina::Coroutine::Engine &engine) {
                     result += "\r\n";
 
                     _event.events |= EPOLLOUT;
+
+                    // return to run ServerImpl::OnRun()
                     engine.block();
 
+                    // the second entry to DoReadWrite() method
                     if (send(_socket, result.data(), result.size(), 0) <= 0) {
                         throw std::runtime_error("Failed to send response");
                     }
+
                     // Prepare for the next command
                     _command_to_execute.reset();
                     _argument_for_command.resize(0);
                     _parser.Reset();
+
+                    // return to run ServerImpl::OnRun()
                     engine.block();
                 }
             }

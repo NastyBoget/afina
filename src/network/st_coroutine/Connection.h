@@ -16,7 +16,8 @@ namespace STcoroutine {
 class Connection {
 public:
     Connection(int s, std::shared_ptr<Afina::Storage> &ps, std::shared_ptr<spdlog::logger> &pl) : _socket(s), _is_alive(false),
-                                                                                                  _ctx(nullptr), _pStorage(ps), _logger(pl) {}
+                                                                                                  _ctx(nullptr), _pStorage(ps),
+                                                                                                  _logger(pl) {}
 
     inline bool isAlive() const { return _is_alive; }
 
@@ -34,6 +35,7 @@ private:
 
     bool _is_alive;
 
+    // context for DoReadWrite coroutine
     Afina::Coroutine::Engine::context *_ctx;
 
     struct epoll_event _event;

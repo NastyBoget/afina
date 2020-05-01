@@ -83,14 +83,8 @@ void block_printer(Afina::Coroutine::Engine &pe, std::string &result) {
     pc = pe.run(printc, pe, out1, pd);
     pd = pe.run(printd, pe, out1, pc);
 
-    // Pass control to first routine, it will ping pong
-    // between printa/printb greedely then we will get
-    // control back
     pe.sched(pc);
-
     out1 << "END";
-
-    // done
     result = out1.str();
 
 }

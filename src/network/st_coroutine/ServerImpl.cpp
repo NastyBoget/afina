@@ -27,7 +27,8 @@ namespace STcoroutine {
 
 // See Server.h
 ServerImpl::ServerImpl(std::shared_ptr<Afina::Storage> ps, std::shared_ptr<Logging::Service> pl) : Server(ps, pl),
-                                                                                                   _engine([this]{this->unblocker();}), _ctx(nullptr) {}
+                                                                                                   _engine([this]{this->unblocker();}),
+                                                                                                   _ctx(nullptr) {}
 
 // See Server.h
 ServerImpl::~ServerImpl() {}
@@ -77,6 +78,7 @@ void ServerImpl::Start(uint16_t port, uint32_t n_acceptors, uint32_t n_workers) 
         throw std::runtime_error("Failed to create epoll file descriptor: " + std::string(strerror(errno)));
     }
 
+    // start engine
     _work_thread = std::thread([this]{ this->_engine.start(static_cast<void(*)(ServerImpl *)>([](ServerImpl *s){ s->OnRun(); }), this); });
 }
 
@@ -84,11 +86,16 @@ void ServerImpl::Start(uint16_t port, uint32_t n_acceptors, uint32_t n_workers) 
 void ServerImpl::Stop() {
     _logger->warn("Stop network service");
 
-
     // Wakeup threads that are sleep on epoll_wait
     if (eventfd_write(_event_fd, 1)) {
         throw std::runtime_error("Failed to wakeup workers");
     }
+
+    // close client sockets to correct finalize server
+    for(auto socket : _client_sockets) {
+        close(socket);
+    }
+    _client_sockets.clear();
     close(_server_socket);
 }
 
@@ -130,11 +137,14 @@ void ServerImpl::OnRun() {
             struct epoll_event &current_event = mod_list[i];
             if (current_event.data.fd == _event_fd) {
                 _logger->debug("Break acceptor due to stop signal");
+                // unblock coroutines for completing it's execution
                 _engine.unblock_all();
+                // block current coroutine for running unblocked ones
                 _engine.block(_ctx);
                 run = false;
                 continue;
             } else if (current_event.data.fd == _server_socket) {
+                // create new coroutine for new connection
                 OnNewConnection(epoll_descr);
                 continue;
             }
@@ -150,11 +160,14 @@ void ServerImpl::OnRun() {
             } else {
                 // Depends on what connection wants...
                 if (current_event.events & EPOLLIN || current_event.events & EPOLLOUT) {
+
+                    // add coroutine for current connection to the list of alive coroutines
                     _engine.unblock(pc->_ctx);
+
+                    // block current coroutine
+                    // there is only one alive coroutine for current connection
+                    // it will run from yield()
                     _engine.block(_ctx);
-                }
-                if (epoll_ctl(epoll_descr, EPOLL_CTL_ADD, pc->_socket, &pc->_event)) {
-                    _logger->error("Failed to delete connection from epoll");
                 }
             }
 
@@ -164,6 +177,7 @@ void ServerImpl::OnRun() {
                     _logger->error("Failed to delete connection from epoll");
                 }
                 close(pc->_socket);
+                _client_sockets.erase(pc->_socket);
                 pc->OnClose();
 
                 delete pc;
@@ -172,6 +186,7 @@ void ServerImpl::OnRun() {
                     _logger->error("Failed to change connection event mask");
 
                     close(pc->_socket);
+                    _client_sockets.erase(pc->_socket);
                     pc->OnClose();
 
                     delete pc;
@@ -216,12 +231,19 @@ void ServerImpl::OnNewConnection(int epoll_descr) {
 
         // Register connection in worker's epoll
         pc->Start();
-        pc->_ctx = static_cast<Afina::Coroutine::Engine::context *>(_engine.run(static_cast<void(*)(Connection *, Afina::Coroutine::Engine &)>
-                                                                                ([](Connection *pc, Afina::Coroutine::Engine &engine) { pc->DoReadWrite(engine); }), (Connection *) pc, _engine));
+
+        // add new coroutine for new connection to the list of alive coroutines
+        pc->_ctx = static_cast<Afina::Coroutine::Engine::context *>(_engine.run(
+            static_cast<void(*)(Connection *, Afina::Coroutine::Engine &)>
+            ([](Connection *pc, Afina::Coroutine::Engine &engine)
+             { pc->DoReadWrite(engine); }), (Connection *) pc, _engine));
+
         if (pc->isAlive()) {
             if (epoll_ctl(epoll_descr, EPOLL_CTL_ADD, pc->_socket, &pc->_event)) {
                 pc->OnError();
                 delete pc;
+            } else {
+                _client_sockets.emplace(pc->_socket);
             }
         }
     }
@@ -230,6 +252,10 @@ void ServerImpl::OnNewConnection(int epoll_descr) {
 void ServerImpl::unblocker() {
     _logger->debug("Unblocker running");
     _engine.unblock(_ctx);
+
+    // there is only one unblocked coroutine _ctx, which will sleep on epoll_wait()
+    // until some new events come and then it unblocks other coroutines
+    // or _ctx continues running and unblocks some other coroutine
     _engine.yield();
 }
 

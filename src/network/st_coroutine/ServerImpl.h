@@ -4,6 +4,7 @@
 #include <thread>
 #include <vector>
 #include <arpa/inet.h>
+#include <unordered_set>
 
 #include <afina/network/Server.h>
 #include <afina/coroutine/Engine.h>
@@ -18,7 +19,7 @@ namespace Network {
 namespace STcoroutine {
 
 /**
- * # Network resource manager implementation
+ * Network resource manager implementation
  * Epoll based server
  */
 class ServerImpl : public Server {
@@ -52,20 +53,24 @@ private:
     // Socket to accept new connection on, shared between acceptors
     int _server_socket;
 
-    // Curstom event "device" used to wakeup workers
+    // Custom event "device" used to wakeup workers
     int _event_fd;
 
-    int _epoll_descr;
+    // set of client sockets for it's correct closing in the end
+    std::unordered_set<int> _client_sockets;
 
     // IO thread
     std::thread _work_thread;
 
+    // context for OnRun coroutine
     Afina::Coroutine::Engine::context *_ctx;
 
+    // engine for coroutines running
     Afina::Coroutine::Engine _engine;
 
+    // unblocker-function for _engine
+    // it will run when there are no alive coroutines anymore
     void unblocker();
-
 };
 
 } // namespace STcoroutine
