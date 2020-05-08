@@ -55,7 +55,7 @@ void ServerImpl::Start(uint16_t port, uint32_t n_acceptors, uint32_t n_workers) 
     }
 
     int opts = 1;
-    if (setsockopt(_server_socket, SOL_SOCKET, (SO_KEEPALIVE), &opts, sizeof(opts)) == -1) {
+    if (setsockopt(_server_socket, SOL_SOCKET, (SO_REUSEADDR), &opts, sizeof(opts)) == -1) {
         close(_server_socket);
         throw std::runtime_error("Socket setsockopt() failed: " + std::string(strerror(errno)));
     }
@@ -91,7 +91,7 @@ void ServerImpl::Start(uint16_t port, uint32_t n_acceptors, uint32_t n_workers) 
 
     _workers.reserve(n_workers);
     for (int i = 0; i < n_workers; i++) {
-        _workers.emplace_back(pStorage, pLogging);
+        _workers.emplace_back(pStorage, pLogging, this);
         _workers.back().Start(_data_epoll_fd);
     }
 
@@ -113,6 +113,13 @@ void ServerImpl::Stop() {
     // Wakeup threads that are sleep on epoll_wait
     if (eventfd_write(_event_fd, 1)) {
         throw std::runtime_error("Failed to wakeup workers");
+    }
+
+    {
+        std::lock_guard<std::mutex> l(_set_is_blocked);
+        for (auto socket : _client_sockets) {
+            shutdown(socket, SHUT_RD);
+        }
     }
     shutdown(_server_socket, SHUT_RDWR);
 }
@@ -221,6 +228,10 @@ void ServerImpl::OnRun() {
         }
     }
     _logger->warn("Acceptor stopped");
+}
+void ServerImpl::delete_from_set(int client_socket) {
+    std::lock_guard<std::mutex> l(_set_is_blocked);
+    _client_sockets.erase(client_socket);
 }
 
 } // namespace MTnonblock

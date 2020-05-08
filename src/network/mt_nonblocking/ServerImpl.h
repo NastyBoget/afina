@@ -24,6 +24,7 @@ class Worker;
  * Epoll based server
  */
 class ServerImpl : public Server {
+    friend class Worker;
 public:
     ServerImpl(std::shared_ptr<Afina::Storage> ps, std::shared_ptr<Logging::Service> pl);
     ~ServerImpl();
@@ -67,6 +68,8 @@ private:
 
     // threads serving read/write requests
     std::vector<Worker> _workers;
+
+    void delete_from_set(int client_socket);
 };
 
 } // namespace MTnonblock
