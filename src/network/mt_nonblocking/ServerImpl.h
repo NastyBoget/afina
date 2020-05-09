@@ -6,6 +6,7 @@
 #include <unordered_set>
 #include <mutex>
 
+#include "Connection.h"
 #include <afina/network/Server.h>
 
 namespace spdlog {
@@ -53,7 +54,7 @@ private:
     // Socket to accept new connection on, shared between acceptors
     int _server_socket;
 
-    std::unordered_set<int> _client_sockets;
+    std::unordered_set<Connection *> _connections;
     std::mutex _set_is_blocked;
 
     // Threads that accepts new connections, each has private epoll instance
@@ -69,7 +70,7 @@ private:
     // threads serving read/write requests
     std::vector<Worker> _workers;
 
-    void delete_from_set(int client_socket);
+    void delete_from_set(Connection *connection);
 };
 
 } // namespace MTnonblock

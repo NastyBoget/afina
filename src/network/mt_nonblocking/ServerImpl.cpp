@@ -117,8 +117,8 @@ void ServerImpl::Stop() {
 
     {
         std::lock_guard<std::mutex> l(_set_is_blocked);
-        for (auto socket : _client_sockets) {
-            shutdown(socket, SHUT_RD);
+        for (auto connection : _connections) {
+            shutdown(connection->_socket, SHUT_RD);
         }
     }
     shutdown(_server_socket, SHUT_RDWR);
@@ -129,16 +129,18 @@ void ServerImpl::Join() {
     for (auto &t : _acceptors) {
         t.join();
     }
-
+    _acceptors.clear();
     for (auto &w : _workers) {
         w.Join();
     }
+    _workers.clear();
     {
         std::lock_guard<std::mutex> l(_set_is_blocked);
-        for (auto socket : _client_sockets) {
-            close(socket);
+        for (auto connection : _connections) {
+            close(connection->_socket);
+            delete connection;
         }
-        _client_sockets.clear();
+        _connections.clear();
     }
     close(_server_socket);
 }
@@ -221,7 +223,7 @@ void ServerImpl::OnRun() {
                         delete pc;
                     } else {
                         std::lock_guard<std::mutex> l(_set_is_blocked);
-                        _client_sockets.emplace(pc->_socket);
+                        _connections.emplace(pc);
                     }
                 }
             }
@@ -229,9 +231,11 @@ void ServerImpl::OnRun() {
     }
     _logger->warn("Acceptor stopped");
 }
-void ServerImpl::delete_from_set(int client_socket) {
+void ServerImpl::delete_from_set(Connection *connection) {
     std::lock_guard<std::mutex> l(_set_is_blocked);
-    _client_sockets.erase(client_socket);
+    _connections.erase(connection);
+    close(connection->_socket);
+    delete connection;
 }
 
 } // namespace MTnonblock

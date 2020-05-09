@@ -26,7 +26,7 @@ void Connection::OnError() {
 // See Connection.h
 void Connection::OnClose() {
     _logger->debug("Connection on {} socket closed", _socket);
-    _is_alive.store(false, std::memory_order_release);
+    _is_alive.store(false, std::memory_order_relaxed);
 }
 
 // See Connection.h
@@ -106,15 +106,15 @@ void Connection::DoRead() {
         } // while (read_count)
         if (_read_bytes == 0) {
             _logger->debug("Connection closed");
+            _data_available.store(true, std::memory_order_relaxed);
             std::atomic_thread_fence(std::memory_order_release);
-            _data_available.store(true, std::memory_order_release);
         } else {
             throw std::runtime_error(std::string(strerror(errno)));
         }
     } catch (std::runtime_error &ex) {
         _logger->error("Failed to process connection on descriptor {}: {}", _socket, ex.what());
+        _data_available.store(true, std::memory_order_relaxed);
         std::atomic_thread_fence(std::memory_order_release);
-        _data_available.store(true, std::memory_order_release);
     }
 }
 
@@ -122,7 +122,7 @@ void Connection::DoRead() {
 void Connection::DoWrite() {
     _logger->debug("Do write on {} socket", _socket);
     std::atomic_thread_fence(std::memory_order_acquire);
-    if (!_data_available.load(std::memory_order_acquire)) {
+    if (!_data_available.load(std::memory_order_relaxed)) {
         return;
     }
     struct iovec tmp[_output_queue.size()];
@@ -159,7 +159,7 @@ void Connection::DoWrite() {
 
     if (_output_queue.empty()) {
         _event.events = EPOLLIN | EPOLLHUP | EPOLLERR | EPOLLET;
-        _is_alive.store(false, std::memory_order_release);
+        _is_alive.store(false, std::memory_order_relaxed);
     }
     std::atomic_thread_fence(std::memory_order_release);
 }
