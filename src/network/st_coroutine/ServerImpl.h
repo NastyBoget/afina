@@ -39,8 +39,6 @@ public:
 protected:
     void OnRun();
 
-    void OnNewConnection(int epoll_descr);
-
 private:
     // logger to use
     std::shared_ptr<spdlog::logger> _logger;
@@ -56,8 +54,8 @@ private:
     // Custom event "device" used to wakeup workers
     int _event_fd;
 
-    // set of client sockets for it's correct closing in the end
-    std::unordered_set<int> _client_sockets;
+    // set of connections for it's correct closing and deleting in the end
+    std::unordered_set<Connection *> _connections;
 
     // IO thread
     std::thread _work_thread;

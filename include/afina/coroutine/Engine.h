@@ -88,6 +88,8 @@ protected:
      */
     void Restore(context &ctx);
 
+    void Enter(context *ctx);
+
     static void null_unblocker() {}
 
 public:
@@ -96,6 +98,7 @@ public:
           blocked(nullptr), idle_ctx(nullptr) {}
     Engine(Engine &&) = delete;
     Engine(const Engine &) = delete;
+    ~Engine();
 
     void unblock_all() {
         for (auto coro = blocked; coro != nullptr; coro = blocked) {
@@ -157,9 +160,10 @@ public:
         // Start routine execution
         void *pc = run(main, std::forward<Ta>(args)...);
         idle_ctx = new context();
+        idle_ctx->Low = idle_ctx->Hight = StackBottom;
         if (setjmp(idle_ctx->Environment) > 0) {
             if (alive == nullptr) {
-                _unblocker();
+                 _unblocker();
             }
             cur_routine = idle_ctx;
 
@@ -167,6 +171,7 @@ public:
             yield();
         } else if (pc != nullptr) {
             Store(*idle_ctx);
+            cur_routine = idle_ctx;
             sched(pc);
         }
 
@@ -175,11 +180,18 @@ public:
         this->StackBottom = nullptr;
     }
 
+    // Wrapper of _run. Allows to save coroutine bottom address
+    template <typename... Ta> void *run(void (*func)(Ta...), Ta &&... args) {
+        char coroutine_start = 0;
+        return _run(&coroutine_start, func, std::forward<Ta>(args)...);
+
+    }
+
     /**
      * Register new coroutine. It won't receive control until scheduled explicitly or implicitly. In case of some
      * errors function returns -1
      */
-    template <typename... Ta> void *run(void (*func)(Ta...), Ta &&... args) {
+    template <typename... Ta> void *_run(char *bottom, void (*func)(Ta...), Ta &&... args) {
         if (this->StackBottom == nullptr) {
             // Engine wasn't initialized yet
             return nullptr;
@@ -187,6 +199,7 @@ public:
 
         // New coroutine context that carries around all information enough to call function
         auto *pc = new context();
+        pc->Low = pc->Hight = bottom;
         // Store current state right here, i.e just before enter new coroutine, later, once it gets scheduled
         // execution starts here. Note that we have to acquire stack of the current function call to ensure
         // that function parameters will be passed along
@@ -214,7 +227,7 @@ public:
             }
 
             // current coroutine finished, and the pointer is not relevant now
-            cur_routine = nullptr;
+            cur_routine = idle_ctx;
             pc->prev = pc->next = nullptr;
             delete std::get<0>(pc->Stack);
             delete pc;

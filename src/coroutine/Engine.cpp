@@ -1,17 +1,32 @@
 #include <afina/coroutine/Engine.h>
 
+#include <cassert>
 #include <csetjmp>
 #include <cstring>
 
 namespace Afina {
 namespace Coroutine {
 
+Engine::~Engine() {
+    for (auto coro = alive; coro != nullptr;) {
+        auto tmp = coro;
+        coro = coro->next;
+        delete tmp;
+    }
+
+    for (auto coro = blocked; coro != nullptr;) {
+        auto tmp = coro;
+        coro = coro->next;
+        delete tmp;
+    }
+}
+
 void Engine::Store(context &ctx) {
     char storeBeginAddress;
-    ctx.Hight = ctx.Low = StackBottom;
+    assert(ctx.Hight != nullptr && ctx.Low != nullptr);
     // this condition used for different architectures,
     // where stack low addresses can be greater than high addresses
-    if (&storeBeginAddress > StackBottom) {
+    if (&storeBeginAddress > ctx.Low) {
         ctx.Hight = &storeBeginAddress;
     } else {
         ctx.Low = &storeBeginAddress;
@@ -40,9 +55,20 @@ void Engine::Restore(context &ctx) {
     longjmp(ctx.Environment, 1);
 }
 
+void Engine::Enter(Engine::context *ctx) {
+    assert(cur_routine != nullptr);
+    if (cur_routine != idle_ctx) {
+        if (setjmp(cur_routine->Environment) > 0) {
+            return;
+        }
+        Store(*cur_routine);
+    }
+    Restore(*ctx);
+}
+
 void Engine::yield() {
     // we have no alive coroutines or we have only one alive coroutine, that is current
-    if (alive == nullptr || (cur_routine == alive && alive->next == nullptr)) return;
+    if (!alive || (cur_routine == alive && !alive->next)) return;
     // choose the next coroutine
     context *nextCoro;
     if (cur_routine == alive) {
@@ -51,13 +77,7 @@ void Engine::yield() {
         nextCoro = alive;
     }
     // run the next alive coroutine
-    if (cur_routine != nullptr && cur_routine != idle_ctx) {
-        if (setjmp(cur_routine->Environment) > 0) {
-            return;
-        }
-        Store(*cur_routine);
-    }
-    Restore(*nextCoro);
+    Enter(nextCoro);
 }
 
 void Engine::sched(void *coro) {
@@ -70,25 +90,19 @@ void Engine::sched(void *coro) {
         return;
     }
     // run the next coroutine
-    if (cur_routine != nullptr && cur_routine != idle_ctx) {
-        if (setjmp(cur_routine->Environment) > 0) {
-            return;
-        }
-        Store(*cur_routine);
-    }
-    Restore(*nextCoro);
+    Enter(nextCoro);
 }
 
 void Engine::block(void *coro) {
     context *blockedCoro;
     // if argument coro == nullptr, then we should block current coroutine
-    if (coro == nullptr) {
+    if (!coro) {
         blockedCoro = cur_routine;
     } else {
         blockedCoro = static_cast<context *>(coro);
     }
     // we shouldn't block coroutine if it's already blocked
-    if (blockedCoro == nullptr || blockedCoro->isBlocked) {
+    if (!blockedCoro || blockedCoro->isBlocked) {
         return;
     }
     blockedCoro->isBlocked = true;
@@ -96,35 +110,28 @@ void Engine::block(void *coro) {
     if (alive == blockedCoro) {
         alive = alive->next;
     }
-    if (blockedCoro->prev != nullptr) {
+    if (blockedCoro->prev) {
         blockedCoro->prev->next = blockedCoro->next;
     }
-    if (blockedCoro->next != nullptr) {
+    if (blockedCoro->next) {
         blockedCoro->next->prev = blockedCoro->prev;
     }
     // add coroutine to the list of blocked coroutines
     blockedCoro->prev = nullptr;
     blockedCoro->next = blocked;
     blocked = blockedCoro;
-    if (blocked->next != nullptr) {
+    if (blocked->next) {
         blocked->next->prev = blockedCoro;
     }
     if (blockedCoro == cur_routine) {
-        if (cur_routine != nullptr && cur_routine != idle_ctx) {
-            if (setjmp(cur_routine->Environment) > 0) {
-                return;
-            }
-            Store(*cur_routine);
-        }
-        cur_routine = nullptr;
-        Restore(*idle_ctx);
+        Enter(idle_ctx);
     }
 }
 
 void Engine::unblock(void *coro) {
     auto unblockedCoro = static_cast<context *>(coro);
     // we shouldn't unblock coroutine if it's already unblocked
-    if (unblockedCoro == nullptr || !unblockedCoro->isBlocked) {
+    if (!unblockedCoro || !unblockedCoro->isBlocked) {
         return;
     }
     unblockedCoro->isBlocked = false;
@@ -132,17 +139,17 @@ void Engine::unblock(void *coro) {
     if (blocked == unblockedCoro) {
         blocked = blocked->next;
     }
-    if (unblockedCoro->prev != nullptr) {
+    if (unblockedCoro->prev) {
         unblockedCoro->prev->next = unblockedCoro->next;
     }
-    if (unblockedCoro->next != nullptr) {
+    if (unblockedCoro->next) {
         unblockedCoro->next->prev = unblockedCoro->prev;
     }
     // add coroutine to the list of alive coroutines
     unblockedCoro->prev = nullptr;
     unblockedCoro->next = alive;
     alive = unblockedCoro;
-    if (alive->next != nullptr) {
+    if (alive->next) {
         alive->next->prev = unblockedCoro;
     }
 }

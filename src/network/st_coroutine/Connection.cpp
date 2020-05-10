@@ -30,9 +30,9 @@ void Connection::OnClose() {
 }
 
 // See Connection.h
-void Connection::DoReadWrite(Afina::Coroutine::Engine &engine) {
+void Connection::DoReadWrite() {
     _logger->debug("Do read on {} socket", _socket);
-    char _read_buffer[4096];
+    char _read_buffer[4096] = "";
     size_t _read_bytes = 0;
     std::size_t _arg_remains = 0;
     Protocol::Parser _parser;
@@ -100,7 +100,7 @@ void Connection::DoReadWrite(Afina::Coroutine::Engine &engine) {
                     _event.events |= EPOLLOUT;
 
                     // return to run ServerImpl::OnRun()
-                    engine.block();
+                    _engine->block();
 
                     // the second entry to DoReadWrite() method
                     if (send(_socket, result.data(), result.size(), 0) <= 0) {
@@ -113,7 +113,7 @@ void Connection::DoReadWrite(Afina::Coroutine::Engine &engine) {
                     _parser.Reset();
 
                     // return to run ServerImpl::OnRun()
-                    engine.block();
+                    _engine->block();
                 }
             }
         } // while (read_count)
