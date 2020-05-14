@@ -1,7 +1,6 @@
 #include "gtest/gtest.h"
 
 #include <iostream>
-#include <sstream>
 
 #include <afina/coroutine/Engine.h>
 
@@ -61,4 +60,40 @@ TEST(CoroutineTest, Printer) {
     std::string result;
     engine.start(_printer, engine, result);
     ASSERT_STREQ("A1 B1 A2 B2 A3 B3 END", result.c_str());
+}
+
+std::stringstream out1;
+void *pc = nullptr, *pd = nullptr;
+
+void printc(Afina::Coroutine::Engine &pe, std::stringstream &out, void *&other) {
+    out << "C1 ";
+    pe.block(nullptr);
+    out << "C2 ";
+    pe.unblock(other);
+}
+
+void printd(Afina::Coroutine::Engine &pe, std::stringstream &out, void *&other) {
+    out << "D1 ";
+    pe.unblock(other);
+    pe.block(nullptr);
+    out << "D2 ";
+}
+
+void block_printer(Afina::Coroutine::Engine &pe, std::string &result) {
+    pc = pe.run(printc, pe, out1, pd);
+    pd = pe.run(printd, pe, out1, pc);
+
+    pe.sched(pc);
+    out1 << "END";
+    result = out1.str();
+
+}
+
+TEST(CoroutineTest, Block) {
+    Afina::Coroutine::Engine engine;
+
+    std::string result;
+    engine.start(block_printer, engine, result);
+
+    ASSERT_STREQ("C1 D1 C2 D2 END", result.c_str());
 }

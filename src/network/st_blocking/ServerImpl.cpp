@@ -212,11 +212,14 @@ void ServerImpl::OnRun() {
                         readed_bytes -= to_read;
                     }
 
-                    // Thre is command & argument - RUN!
+                    // There is command & argument - RUN!
                     if (command_to_execute && arg_remains == 0) {
                         _logger->debug("Start command execution");
 
                         std::string result;
+                        if (argument_for_command.size()) {
+                            argument_for_command.resize(argument_for_command.size() - 2);
+                        }
                         command_to_execute->Execute(*pStorage, argument_for_command, result);
 
                         // Send response
