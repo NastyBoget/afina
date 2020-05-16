@@ -106,12 +106,6 @@ void ServerImpl::Join() {
     // Wait for work to be complete
     if (_work_thread.joinable()) {
         _work_thread.join();
-
-        for (auto connection : _connections) {
-            close(connection->_socket);
-            delete connection;
-        }
-        _connections.clear();
         close(_server_socket);
     }
 }
@@ -252,6 +246,12 @@ void ServerImpl::OnRun() {
     }
     _logger->warn("Acceptor stopped");
     _ctx = nullptr;
+
+    for (auto connection : _connections) {
+        close(connection->_socket);
+        delete connection;
+    }
+    _connections.clear();
 }
 
 void ServerImpl::unblocker() {

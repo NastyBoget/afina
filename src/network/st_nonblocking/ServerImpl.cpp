@@ -27,7 +27,10 @@ namespace STnonblock {
 ServerImpl::ServerImpl(std::shared_ptr<Afina::Storage> ps, std::shared_ptr<Logging::Service> pl) : Server(ps, pl) {}
 
 // See Server.h
-ServerImpl::~ServerImpl() {}
+ServerImpl::~ServerImpl() {
+    ServerImpl::Stop();
+    ServerImpl::Join();
+}
 
 // See Server.h
 void ServerImpl::Start(uint16_t port, uint32_t n_acceptors, uint32_t n_workers) {
@@ -86,17 +89,15 @@ void ServerImpl::Stop() {
     if (eventfd_write(_event_fd, 1)) {
         throw std::runtime_error("Failed to wakeup workers");
     }
-    for (auto socket : _client_sockets) {
-        close(socket);
-    }
-    _client_sockets.clear();
     close(_server_socket);
 }
 
 // See Server.h
 void ServerImpl::Join() {
-    // Wait for work to be complete
-    _work_thread.join();
+    if (_work_thread.joinable()) {
+        // Wait for work to be complete
+        _work_thread.join();
+    }
 }
 
 // See ServerImpl.h
@@ -164,7 +165,7 @@ void ServerImpl::OnRun() {
 
                 close(pc->_socket);
                 pc->OnClose();
-                _client_sockets.erase(pc->_socket);
+                _connections.erase(pc);
                 delete pc;
             } else if (pc->_event.events != old_mask) {
                 if (epoll_ctl(epoll_descr, EPOLL_CTL_MOD, pc->_socket, &pc->_event)) {
@@ -172,13 +173,18 @@ void ServerImpl::OnRun() {
 
                     close(pc->_socket);
                     pc->OnClose();
-                    _client_sockets.erase(pc->_socket);
+                    _connections.erase(pc);
                     delete pc;
                 }
             }
         }
     }
     _logger->warn("Acceptor stopped");
+    for (auto connection : _connections) {
+        close(connection->_socket);
+        delete connection;
+    }
+    _connections.clear();
 }
 
 void ServerImpl::OnNewConnection(int epoll_descr) {
@@ -220,7 +226,7 @@ void ServerImpl::OnNewConnection(int epoll_descr) {
                 delete pc;
             }
         }
-        _client_sockets.emplace(pc->_socket);
+        _connections.emplace(pc);
     }
 }
 
